@@ -1,7 +1,7 @@
 from typing import Dict, List
 from rich.console import Console
 from rich.panel import Panel
-from rich.markdown import Markdown
+from rich.text import Text
 from rich.table import Table
 from rich import box
 
@@ -23,51 +23,47 @@ class UI:
         return colors[idx]
 
     def display_proposal(self, agent_id: str, role: str, content: str, version: int = 1):
+        """Display proposal as formatted raw text with full visibility."""
         color = self.get_agent_color(agent_id)
         title = f"PROPOSAL BY {agent_id} (V{version})"
-        self.console.print(Panel(
-            Markdown(content),
-            title=f"[bold {color}]{title}[/]",
-            subtitle=f"[dim]{role}[/]",
-            border_style=color,
-            box=box.ROUNDED,
-            padding=(1, 2)
-        ))
+        
+        # Show the raw AI response with proper formatting
+        self.console.print(f"\n[bold {color}]═══════════════════════════════════════════════════════════[/bold {color}]")
+        self.console.print(f"[bold {color}] {title}[/bold {color}]")
+        self.console.print(f"[dim]{role}[/dim]")
+        self.console.print(f"[bold {color}]═══════════════════════════════════════════════════════════[/bold {color}]")
+        self.console.print(f"[white]{content}[/white]")
+        self.console.print(f"[bold {color}]═══════════════════════════════════════════════════════════[/bold {color}]\n")
 
     def display_critique(self, agent_id: str, role: str, content: str):
+        """Display critique as formatted raw text with full visibility."""
         color = self.get_agent_color(agent_id)
-        self.console.print(Panel(
-            Markdown(content),
-            title=f"[dim {color}]{agent_id} ({role}) Critique[/dim {color}]",
-            border_style=f"dim {color}",
-            box=box.SIMPLE,
-            padding=(0, 2)
-        ))
+        self.console.print(f"\n[dim {color}]┌─ {agent_id} ({role}) Critique ────────────────────────────────[/dim {color}]")
+        self.console.print(f"[white]{content}[/white]")
+        self.console.print(f"[dim {color}]└────────────────────────────────────────────────────────────[/dim {color}]\n")
 
     def display_verdict(self, agent_id: str, role: str, content: str):
-        self.console.print(Panel(
-            Markdown(content),
-            title="[bold yellow]⚖ FINAL VERDICT BY CHIEF JUSTICE[/bold yellow]",
-            subtitle=f"[dim yellow]{agent_id} ({role})[/dim yellow]",
-            border_style="yellow",
-            box=box.DOUBLE,
-            padding=(1, 2)
-        ))
+        """Display verdict as formatted raw text with full visibility."""
+        self.console.print(f"\n[bold yellow]╔═══════════════════════════════════════════════════════════╗[/bold yellow]")
+        self.console.print(f"[bold yellow]║ ⚖ FINAL VERDICT BY CHIEF JUSTICE                              ║[/bold yellow]")
+        self.console.print(f"[bold yellow]║ {agent_id} ({role})                                           ║[/bold yellow]")
+        self.console.print(f"[bold yellow]╠═══════════════════════════════════════════════════════════╣[/bold yellow]")
+        self.console.print(f"[white]{content}[/white]")
+        self.console.print(f"[bold yellow]╚═══════════════════════════════════════════════════════════╝[/bold yellow]\n")
 
     def log_action(self, action: str, details: str = ""):
-        """Display a subtle system log entry for transparency."""
-        msg = f"[dim cyan][SYSTEM][/][dim] {action}[/]"
+        """Display a visible system log entry for full transparency."""
+        msg = f"[bold cyan][SYSTEM][/bold cyan] [white]{action}[/white]"
         if details:
-            msg += f": [italic]{details}[/]"
+            msg += f": [yellow]{details}[/yellow]"
         self.console.print(msg)
 
     def display_odds(self, bookie_role: str, odds_data: Dict[str, str], raw_response: str):
-        self.console.print(Panel(
-            Markdown(raw_response),
-            title=f"[bold yellow]BETTING ANALYSIS BY {bookie_role}[/]",
-            border_style="yellow",
-            box=box.ROUNDED
-        ))
+        """Display odds response as formatted raw text with full visibility."""
+        self.console.print(f"\n[bold yellow]┌─ BETTING ANALYSIS BY {bookie_role} ────────────────────────────────[/bold yellow]")
+        self.console.print(f"[white]{raw_response}[/white]")
+        self.console.print(f"[bold yellow]└────────────────────────────────────────────────────────────┘[/bold yellow]\n")
+        
         table = Table(title="[bold yellow]CURRENT ODDS[/]", box=box.SIMPLE, expand=False)
         table.add_column("Agent", style="cyan")
         table.add_column("Odds", style="green")
@@ -90,5 +86,11 @@ class UI:
             table.add_row(f"#{i+1}", p.id, p.role, str(p.score))
         self.console.print(table)
         
-        winner = sorted_props[0]
-        self.console.print(Panel(Markdown(winner.answer_v2), title="👑 CHAMPION MASTERPIECE 👑", border_style="gold3"))
+        if sorted_props and sorted_props[0].answer_v2:
+            winner = sorted_props[0]
+            self.console.print(f"\n[bold gold3]╔═══════════════════════════════════════════════════════════╗[/bold gold3]")
+            self.console.print(f"[bold gold3]║ 👑 CHAMPION MASTERPIECE 👑                                    ║[/bold gold3]")
+            self.console.print(f"[bold gold3]║ {winner.id} ({winner.role}) - Score: {winner.score}                          ║[/bold gold3]")
+            self.console.print(f"[bold gold3]╠═══════════════════════════════════════════════════════════╣[/bold gold3]")
+            self.console.print(f"[white]{winner.answer_v2}[/white]")
+            self.console.print(f"[bold gold3]╚═══════════════════════════════════════════════════════════╝[/bold gold3]\n")

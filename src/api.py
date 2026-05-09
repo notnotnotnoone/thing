@@ -24,24 +24,36 @@ class CerebrasClient:
     ) -> Optional[str]:
         model = self.tiers.get(tier, "llama3.1-8b")
         max_retries = 3
+        last_error = None
+        
         for attempt in range(max_retries):
             self.limiter.wait_if_needed()
             try:
+                logger.info(f"API Call (Attempt {attempt+1}/{max_retries}): Model={model}, Tier={tier}, Tokens={max_tokens}")
                 resp = self.client.chat.completions.create(
                     messages=messages,
                     model=model,
                     temperature=temperature,
                     max_completion_tokens=max_tokens
                 )
-                return resp.choices[0].message.content.strip()
+                content = resp.choices[0].message.content.strip()
+                logger.info(f"API Call Successful: Received {len(content)} characters")
+                return content
             except Exception as e:
+                last_error = e
+                error_type = type(e).__name__
+                error_msg = str(e)
+                logger.error(f"API Error (Attempt {attempt+1}/{max_retries}): {error_type}: {error_msg}")
+                
                 if "429" in str(e) or "rate_limit" in str(e).lower():
                     wait_time = (attempt + 1) * 10
                     logger.warning(f"Rate limited (429). Retrying in {wait_time}s...")
                     time.sleep(wait_time)
                 else:
-                    logger.error(f"API Error: {e}")
                     if attempt == max_retries - 1:
-                        return None
+                        logger.error(f"Final attempt failed. Raising exception.")
+                        raise e
                     time.sleep(1)
+        
+        logger.error(f"All {max_retries} attempts failed. Last error: {last_error}")
         return None
