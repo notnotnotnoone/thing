@@ -1,0 +1,22 @@
+{
+  "model_tiers": {
+    "SUPERLOW": "llama3.1-8b",
+    "LOW": "llama3.1-8b",
+    "MEDIUM": "llama3.1-70b",
+    "HIGH": "llama3.3-70b",
+    "EXTREME": "llama-3.3-70b"
+  },
+  "default_tiers": {
+    "brainstorm": "MEDIUM",
+    "critique": "LOW",
+    "verdict": "HIGH",
+    "analyst": "EXTREME",
+    "synthesis": "EXTREME",
+    "spectacle": "SUPERLOW"
+  },
+  "simulation": {
+    "chat_interval": 5,
+    "max_rpm": 30,
+    "judges_per_trial": 6
+  }
+}
