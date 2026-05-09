@@ -4,7 +4,6 @@ import logging
 import time
 from typing import List, Dict, Any, Optional
 from rich.panel import Panel
-from rich.markdown import Markdown
 from .models import Persona, Proposal, AgentMemory
 from .api import CerebrasClient
 from .ui import UI
@@ -44,14 +43,40 @@ class SwarmBrain:
         self.ui.print_rule("PHASE 0: THE ANALYST", "green")
         tier = self.client.config.get("default_tiers", {}).get("analyst", "EXTREME")
         
-        with self.ui.console.status(f"[bold green]Analyst is scanning the landscape (Tier: {tier})...[/]", spinner="arc"):
-            self.ui.log_action("Preprocessing", f"Sending prompt to {tier} model...")
-            prompt = f"Analyze this request and provide a high-level strategic briefing for a swarm of 30 specialized AI agents: {user_prompt}"
-            response = self.client.call_with_retry([{"role": "user", "content": prompt}], tier=tier)
-            self.strategic_brief = response if response else "Error generating strategic brief."
+        self.ui.log_action("Preprocessing", f"Sending prompt to {tier} model...")
+        prompt = f"Analyze this request and provide a high-level strategic briefing for a swarm of 30 specialized AI agents: {user_prompt}"
         
-        self.ui.log_action("Context Injected", "Strategic briefing has been broadcast to all agents.")
-        self.ui.console.print(Panel(self.strategic_brief, title="STRATEGIC BRIEFING", border_style="green"))
+        try:
+            with self.ui.console.status(f"[bold green]Analyst is scanning the landscape (Tier: {tier})...[/]", spinner="arc"):
+                response = self.client.call_with_retry([{"role": "user", "content": prompt}], tier=tier)
+            
+            if response is None:
+                error_msg = "API returned None after all retries - check logs for detailed error"
+                self.ui.log_action("CRITICAL ERROR", f"Analyst phase failed: {error_msg}")
+                self.ui.console.print(f"\n[bold red]╔═══════════════════════════════════════════════════════════╗[/bold red]")
+                self.ui.console.print(f"[bold red]║ CRITICAL: ANALYST PHASE FAILED                                ║[/bold red]")
+                self.ui.console.print(f"[bold red]╠═══════════════════════════════════════════════════════════╣[/bold red]")
+                self.ui.console.print(f"[red]{error_msg}[/red]")
+                self.ui.console.print(f"[bold red]╚═══════════════════════════════════════════════════════════╝[/bold red]\n")
+                raise RuntimeError(error_msg)
+            
+            self.strategic_brief = response
+            self.ui.log_action("Context Injected", "Strategic briefing has been broadcast to all agents.")
+            self.ui.console.print(f"\n[bold green]╔═══════════════════════════════════════════════════════════╗[/bold green]")
+            self.ui.console.print(f"[bold green]║ STRATEGIC BRIEFING                                            ║[/bold green]")
+            self.ui.console.print(f"[bold green]╠═══════════════════════════════════════════════════════════╣[/bold green]")
+            self.ui.console.print(f"[white]{self.strategic_brief}[/white]")
+            self.ui.console.print(f"[bold green]╚═══════════════════════════════════════════════════════════╝[/bold green]\n")
+        except Exception as e:
+            error_msg = f"{type(e).__name__}: {str(e)}"
+            self.ui.log_action("CRITICAL ERROR", f"Analyst phase crashed: {error_msg}")
+            self.ui.console.print(f"\n[bold red]╔═══════════════════════════════════════════════════════════╗[/bold red]")
+            self.ui.console.print(f"[bold red]║ EXCEPTION IN ANALYST PHASE                                    ║[/bold red]")
+            self.ui.console.print(f"[bold red]╠═══════════════════════════════════════════════════════════╣[/bold red]")
+            self.ui.console.print(f"[red]Error Type: {type(e).__name__}[/red]")
+            self.ui.console.print(f"[red]Error Details: {str(e)}[/red]")
+            self.ui.console.print(f"[bold red]╚═══════════════════════════════════════════════════════════╝[/bold red]\n")
+            raise  # Re-raise to stop execution
 
     def generate_proposals(self, prompt: str) -> List[Proposal]:
         self.ui.print_rule("PHASE 1: THE GREAT BRAINSTORM", "cyan")
@@ -63,23 +88,47 @@ class SwarmBrain:
             memory = self._get_memory(p.id)
             context = memory.get_context_string()
             
-            with self.ui.console.status(f"[bold cyan]Agent {p.id} is thinking (Tier: {tier})...[/]", spinner="dots"):
-                self.ui.log_action("Context Construction", f"Injecting {len(context)} bytes of history...")
-                full_prompt = (
-                    f"Your Persona: {p.role}\n{p.description}\n"
-                    f"Session History: {context}\n"
-                    f"Strategic Briefing: {self.strategic_brief}\n"
-                    f"Task: {prompt}\n"
-                    "Write a detailed proposal. Focus on your expertise."
-                )
-                answer = self.client.call_with_retry([{"role": "user", "content": full_prompt}], tier=tier)
+            self.ui.log_action("Context Construction", f"Injecting {len(context)} bytes of history...")
+            full_prompt = (
+                f"Your Persona: {p.role}\n{p.description}\n"
+                f"Session History: {context}\n"
+                f"Strategic Briefing: {self.strategic_brief}\n"
+                f"Task: {prompt}\n"
+                "Write a detailed proposal. Focus on your expertise."
+            )
             
-            if answer:
+            try:
+                with self.ui.console.status(f"[bold cyan]Agent {p.id} is thinking (Tier: {tier})...[/]", spinner="dots"):
+                    answer = self.client.call_with_retry([{"role": "user", "content": full_prompt}], tier=tier)
+                
+                if answer is None:
+                    error_msg = f"API returned None after all retries for agent {p.id}"
+                    self.ui.log_action("CRITICAL ERROR", error_msg)
+                    self.ui.console.print(f"\n[bold red]╔═══════════════════════════════════════════════════════════╗[/bold red]")
+                    self.ui.console.print(f"[bold red]║ AGENT {p.id} FAILED TO RESPOND                                  ║[/bold red]")
+                    self.ui.console.print(f"[bold red]╠═══════════════════════════════════════════════════════════╣[/bold red]")
+                    self.ui.console.print(f"[red]Check logs for detailed API error information[/red]")
+                    self.ui.console.print(f"[bold red]╚═══════════════════════════════════════════════════════════╝[/bold red]\n")
+                    # Continue to next agent instead of failing entire phase
+                    continue
+                
                 self.ui.display_proposal(p.id, p.role, answer, version=1)
                 self._log_action(p.id, "drafted V1 proposal", answer[:100] + "...")
                 proposals.append(Proposal(id=p.id, role=p.role, answer_v1=answer))
-            else:
-                self.ui.log_action("Execution Failure", f"Agent {p.id} failed to respond.")
+            except Exception as e:
+                error_msg = f"{type(e).__name__}: {str(e)}"
+                self.ui.log_action("CRITICAL ERROR", f"Agent {p.id} crashed: {error_msg}")
+                self.ui.console.print(f"\n[bold red]╔═══════════════════════════════════════════════════════════╗[/bold red]")
+                self.ui.console.print(f"[bold red]║ EXCEPTION IN AGENT {p.id}                                       ║[/bold red]")
+                self.ui.console.print(f"[bold red]╠═══════════════════════════════════════════════════════════╣[/bold red]")
+                self.ui.console.print(f"[red]Error Type: {type(e).__name__}[/red]")
+                self.ui.console.print(f"[red]Error Details: {str(e)}[/red]")
+                self.ui.console.print(f"[bold red]╚═══════════════════════════════════════════════════════════╝[/bold red]\n")
+                # Continue to next agent instead of failing entire phase
+                
+        if not proposals:
+            raise RuntimeError("All agents failed to generate proposals - check error logs")
+            
         return proposals
 
     def run_bookie(self, proposals: List[Proposal], stage: str = "Initial"):
@@ -87,26 +136,46 @@ class SwarmBrain:
         tier = self.client.config.get("default_tiers", {}).get("spectacle", "SUPERLOW")
         bookie = random.choice(self.bookies)
         
-        with self.ui.console.status(f"[bold yellow]Bookie {bookie.id} is calculating the spread...[/]", spinner="money"):
-            self.ui.log_action("Probability Math", f"Aggregating {len(proposals)} proposals for comparison...")
-            summary = "\n".join([f"Agent {p.id} ({p.role}): V1 Length {len(p.answer_v1)} chars" for p in proposals])
-            prompt = (
-                f"Persona: {bookie.role} - {bookie.description}\n"
-                f"Current Standings:\n{summary}\n"
-                f"Strategic Brief: {self.strategic_brief}\n"
-                "As a professional bookie, set betting odds for the top 5 agents. Format as 'Agent ID: Odds' (e.g. A-01: 2/1). Be snappy."
-            )
-            response = self.client.call_with_retry([{"role": "user", "content": prompt}], tier=tier)
+        self.ui.log_action("Probability Math", f"Aggregating {len(proposals)} proposals for comparison...")
+        summary = "\n".join([f"Agent {p.id} ({p.role}): V1 Length {len(p.answer_v1)} chars" for p in proposals])
+        prompt = (
+            f"Persona: {bookie.role} - {bookie.description}\n"
+            f"Current Standings:\n{summary}\n"
+            f"Strategic Brief: {self.strategic_brief}\n"
+            "As a professional bookie, set betting odds for the top 5 agents. Format as 'Agent ID: Odds' (e.g. A-01: 2/1). Be snappy."
+        )
+        
+        try:
+            with self.ui.console.status(f"[bold yellow]Bookie {bookie.id} is calculating the spread...[/]", spinner="money"):
+                response = self.client.call_with_retry([{"role": "user", "content": prompt}], tier=tier)
             
-            if response:
-                self.ui.log_action("Parsing Odds", "Extracting Agent-to-Value mappings...")
-                odds_map = {}
-                matches = re.findall(r'([AWB]-\d+):\s*(\d+/\d+)', response)
-                for aid, val in matches:
-                    odds_map[aid] = val
-                
-                self.ui.display_odds(bookie.role, odds_map, response)
-                self._log_action(bookie.id, f"calculated {stage} odds", response[:100])
+            if response is None:
+                error_msg = f"API returned None after all retries for bookie {bookie.id}"
+                self.ui.log_action("CRITICAL ERROR", error_msg)
+                self.ui.console.print(f"\n[bold red]╔═══════════════════════════════════════════════════════════╗[/bold red]")
+                self.ui.console.print(f"[bold red]║ BOOKIE FAILED TO RESPOND                                      ║[/bold red]")
+                self.ui.console.print(f"[bold red]╠═══════════════════════════════════════════════════════════╣[/bold red]")
+                self.ui.console.print(f"[red]{error_msg}[/red]")
+                self.ui.console.print(f"[bold red]╚═══════════════════════════════════════════════════════════╝[/bold red]\n")
+                return
+            
+            self.ui.log_action("Parsing Odds", "Extracting Agent-to-Value mappings...")
+            odds_map = {}
+            matches = re.findall(r'([AWB]-\d+):\s*(\d+/\d+)', response)
+            for aid, val in matches:
+                odds_map[aid] = val
+            
+            self.ui.display_odds(bookie.role, odds_map, response)
+            self._log_action(bookie.id, f"calculated {stage} odds", response[:100])
+        except Exception as e:
+            error_msg = f"{type(e).__name__}: {str(e)}"
+            self.ui.log_action("CRITICAL ERROR", f"Bookie {bookie.id} crashed: {error_msg}")
+            self.ui.console.print(f"\n[bold red]╔═══════════════════════════════════════════════════════════╗[/bold red]")
+            self.ui.console.print(f"[bold red]║ EXCEPTION IN BOOKIE                                           ║[/bold red]")
+            self.ui.console.print(f"[bold red]╠═══════════════════════════════════════════════════════════╣[/bold red]")
+            self.ui.console.print(f"[red]Error Type: {type(e).__name__}[/red]")
+            self.ui.console.print(f"[red]Error Details: {str(e)}[/red]")
+            self.ui.console.print(f"[bold red]╚═══════════════════════════════════════════════════════════╝[/bold red]\n")
         return
 
     def run_divine_intervention(self):
@@ -134,31 +203,66 @@ class SwarmBrain:
             
             for juror in selected_jury:
                 memory = self._get_memory(juror.id)
-                with self.ui.console.status(f"[bold magenta]Juror {juror.id} is critiquing (Tier: {critique_tier})...[/]", spinner="bouncingBar"):
-                    self.ui.log_action("Judgment Call", f"Juror {juror.id} is reviewing {prop.id}'s proposal...")
-                    judge_prompt = (
-                        f"Persona: {juror.role}\n{memory.get_context_string()}\n"
-                        f"Proposal to Judge: {prop.answer_v1}\n"
-                        f"News Flash: {self.news_flash}\n"
-                        "Critique this proposal. Be honest and specific. End with SCORE: X/10"
-                    )
-                    critique = self.client.call_with_retry([{"role": "user", "content": judge_prompt}], tier=critique_tier)
-                    if critique:
-                        self.ui.display_critique(juror.id, juror.role, critique)
-                        prop.jury_feedback.append(critique)
-                        match = re.search(r'SCORE:\s*(\d+)', critique.upper())
-                        score = int(match.group(1)) if match else 5
-                        self._log_action(juror.id, f"judged {prop.id}", f"Score: {score}")
+                self.ui.log_action("Judgment Call", f"Juror {juror.id} is reviewing {prop.id}'s proposal...")
+                judge_prompt = (
+                    f"Persona: {juror.role}\n{memory.get_context_string()}\n"
+                    f"Proposal to Judge: {prop.answer_v1}\n"
+                    f"News Flash: {self.news_flash}\n"
+                    "Critique this proposal. Be honest and specific. End with SCORE: X/10"
+                )
+                try:
+                    with self.ui.console.status(f"[bold magenta]Juror {juror.id} is critiquing (Tier: {critique_tier})...[/]", spinner="bouncingBar"):
+                        critique = self.client.call_with_retry([{"role": "user", "content": judge_prompt}], tier=critique_tier)
+                    if critique is None:
+                        self.ui.log_action("CRITICAL ERROR", f"Juror {juror.id} returned None after all retries")
+                        self.ui.console.print(f"\n[bold red]╔═══════════════════════════════════════════════════════════╗[/bold red]")
+                        self.ui.console.print(f"[bold red]║ JUROR {juror.id} FAILED TO RESPOND                              ║[/bold red]")
+                        self.ui.console.print(f"[bold red]╠═══════════════════════════════════════════════════════════╣[/bold red]")
+                        self.ui.console.print(f"[red]Check logs for detailed API error[/red]")
+                        self.ui.console.print(f"[bold red]╚═══════════════════════════════════════════════════════════╝[/bold red]\n")
+                        continue
+                    
+                    self.ui.display_critique(juror.id, juror.role, critique)
+                    prop.jury_feedback.append(critique)
+                    match = re.search(r'SCORE:\s*(\d+)', critique.upper())
+                    score = int(match.group(1)) if match else 5
+                    self._log_action(juror.id, f"judged {prop.id}", f"Score: {score}")
+                except Exception as e:
+                    error_msg = f"{type(e).__name__}: {str(e)}"
+                    self.ui.log_action("CRITICAL ERROR", f"Juror {juror.id} crashed: {error_msg}")
+                    self.ui.console.print(f"\n[bold red]╔═══════════════════════════════════════════════════════════╗[/bold red]")
+                    self.ui.console.print(f"[bold red]║ EXCEPTION IN JUROR {juror.id}                                   ║[/bold red]")
+                    self.ui.console.print(f"[bold red]╠═══════════════════════════════════════════════════════════╣[/bold red]")
+                    self.ui.console.print(f"[red]Error Type: {type(e).__name__}[/red]")
+                    self.ui.console.print(f"[red]Error Details: {str(e)}[/red]")
+                    self.ui.console.print(f"[bold red]╚═══════════════════════════════════════════════════════════╝[/bold red]\n")
 
             # Jester Roast
             jester = random.choice(self.jesters)
-            with self.ui.console.status(f"[bold red]Jester {jester.id} is roasting...[/]", spinner="aesthetic"):
-                self.ui.log_action("Chaos Injection", f"Jester {jester.id} providing mandatory roast.")
-                j_prompt = f"Jester Persona: {jester.role}\nProposal: {prop.answer_v1}\nRoast this proposal brutally."
-                roast = self.client.call_with_retry([{"role": "user", "content": j_prompt}], tier=spectacle_tier)
-                if roast:
+            self.ui.log_action("Chaos Injection", f"Jester {jester.id} providing mandatory roast.")
+            j_prompt = f"Jester Persona: {jester.role}\nProposal: {prop.answer_v1}\nRoast this proposal brutally."
+            try:
+                with self.ui.console.status(f"[bold red]Jester {jester.id} is roasting...[/]", spinner="aesthetic"):
+                    roast = self.client.call_with_retry([{"role": "user", "content": j_prompt}], tier=spectacle_tier)
+                if roast is None:
+                    self.ui.log_action("CRITICAL ERROR", f"Jester {jester.id} returned None after all retries")
+                    self.ui.console.print(f"\n[bold red]╔═══════════════════════════════════════════════════════════╗[/bold red]")
+                    self.ui.console.print(f"[bold red]║ JESTER {jester.id} FAILED TO RESPOND                              ║[/bold red]")
+                    self.ui.console.print(f"[bold red]╠═══════════════════════════════════════════════════════════╣[/bold red]")
+                    self.ui.console.print(f"[red]Check logs for detailed API error[/red]")
+                    self.ui.console.print(f"[bold red]╚═══════════════════════════════════════════════════════════╝[/bold red]\n")
+                else:
                     prop.jester_roast = roast
                     self.ui.display_critique(jester.id, jester.role, f"[bold red]ROAST:[/bold red] {roast}")
+            except Exception as e:
+                error_msg = f"{type(e).__name__}: {str(e)}"
+                self.ui.log_action("CRITICAL ERROR", f"Jester {jester.id} crashed: {error_msg}")
+                self.ui.console.print(f"\n[bold red]╔═══════════════════════════════════════════════════════════╗[/bold red]")
+                self.ui.console.print(f"[bold red]║ EXCEPTION IN JESTER {jester.id}                                   ║[/bold red]")
+                self.ui.console.print(f"[bold red]╠═══════════════════════════════════════════════════════════╣[/bold red]")
+                self.ui.console.print(f"[red]Error Type: {type(e).__name__}[/red]")
+                self.ui.console.print(f"[red]Error Details: {str(e)}[/red]")
+                self.ui.console.print(f"[bold red]╚═══════════════════════════════════════════════════════════╝[/bold red]\n")
         return proposals
 
     def run_refinement_phase(self, proposals: List[Proposal]):
@@ -170,21 +274,39 @@ class SwarmBrain:
             memory = self._get_memory(prop.id)
             feedback_str = "\n".join([f"- {f[:200]}..." for f in prop.jury_feedback])
             
-            with self.ui.console.status(f"[bold cyan]Agent {prop.id} is refining proposal (V2)...[/]", spinner="growVertical"):
-                self.ui.log_action("Feedback Synthesis", f"Agent {prop.id} is processing jury notes...")
-                prompt = (
-                    f"Your Persona: {p_persona.role}\n{memory.get_context_string()}\n"
-                    f"News Flash: {self.news_flash}\n"
-                    f"Your V1 Draft: {prop.answer_v1}\n"
-                    f"Jury Feedback: {feedback_str}\n"
-                    "This is your SECOND CHANCE. Rewrite your proposal to address the feedback and the News Flash."
-                )
-                answer = self.client.call_with_retry([{"role": "user", "content": prompt}], tier=tier)
-            
-            if answer:
+            self.ui.log_action("Feedback Synthesis", f"Agent {prop.id} is processing jury notes...")
+            prompt = (
+                f"Your Persona: {p_persona.role}\n{memory.get_context_string()}\n"
+                f"News Flash: {self.news_flash}\n"
+                f"Your V1 Draft: {prop.answer_v1}\n"
+                f"Jury Feedback: {feedback_str}\n"
+                "This is your SECOND CHANCE. Rewrite your proposal to address the feedback and the News Flash."
+            )
+            try:
+                with self.ui.console.status(f"[bold cyan]Agent {prop.id} is refining proposal (V2)...[/]", spinner="growVertical"):
+                    answer = self.client.call_with_retry([{"role": "user", "content": prompt}], tier=tier)
+                
+                if answer is None:
+                    self.ui.log_action("CRITICAL ERROR", f"Agent {prop.id} returned None during refinement")
+                    self.ui.console.print(f"\n[bold red]╔═══════════════════════════════════════════════════════════╗[/bold red]")
+                    self.ui.console.print(f"[bold red]║ REFINEMENT FAILED FOR {prop.id}                                 ║[/bold red]")
+                    self.ui.console.print(f"[bold red]╠═══════════════════════════════════════════════════════════╣[/bold red]")
+                    self.ui.console.print(f"[red]Check logs for detailed API error[/red]")
+                    self.ui.console.print(f"[bold red]╚═══════════════════════════════════════════════════════════╝[/bold red]\n")
+                    continue
+                
                 prop.answer_v2 = answer
                 self.ui.display_proposal(prop.id, prop.role, answer, version=2)
                 self._log_action(prop.id, "refined proposal to V2", answer[:100] + "...")
+            except Exception as e:
+                error_msg = f"{type(e).__name__}: {str(e)}"
+                self.ui.log_action("CRITICAL ERROR", f"Agent {prop.id} crashed during refinement: {error_msg}")
+                self.ui.console.print(f"\n[bold red]╔═══════════════════════════════════════════════════════════╗[/bold red]")
+                self.ui.console.print(f"[bold red]║ EXCEPTION IN REFINEMENT FOR {prop.id}                           ║[/bold red]")
+                self.ui.console.print(f"[bold red]╠═══════════════════════════════════════════════════════════╣[/bold red]")
+                self.ui.console.print(f"[red]Error Type: {type(e).__name__}[/red]")
+                self.ui.console.print(f"[red]Error Details: {str(e)}[/red]")
+                self.ui.console.print(f"[bold red]╚═══════════════════════════════════════════════════════════╝[/bold red]\n")
         return proposals
 
     def run_final_verdict(self, proposals: List[Proposal]):
@@ -193,20 +315,43 @@ class SwarmBrain:
         
         for prop in proposals:
             chief = random.choice(self.core_personas)
-            with self.ui.console.status(f"[bold yellow]Chief Justice {chief.id} is rendering verdict...[/]", spinner="dqpb"):
-                self.ui.log_action("Supreme Judgment", f"Chief Justice {chief.id} is reviewing V2 of {prop.id}")
-                prompt = (
-                    f"Chief Justice Persona: {chief.role}\n"
-                    f"Proposal (V2): {prop.answer_v2}\n"
-                    f"News Flash: {self.news_flash}\n"
-                    "Provide a final ruling and end with SCORE: X/10"
-                )
-                verdict = self.client.call_with_retry([{"role": "user", "content": prompt}], tier=tier)
-                if verdict:
-                    self.ui.log_action("Score Extraction", f"Parsing final score for {prop.id}...")
-                    self.ui.display_verdict(chief.id, chief.role, verdict)
-                    match = re.search(r'SCORE:\s*(\d+)', verdict.upper())
-                    prop.score = int(match.group(1)) if match else 5
+            self.ui.log_action("Supreme Judgment", f"Chief Justice {chief.id} is reviewing V2 of {prop.id}")
+            prompt = (
+                f"Chief Justice Persona: {chief.role}\n"
+                f"Proposal (V2): {prop.answer_v2}\n"
+                f"News Flash: {self.news_flash}\n"
+                "Provide a final ruling and end with SCORE: X/10"
+            )
+            try:
+                with self.ui.console.status(f"[bold yellow]Chief Justice {chief.id} is rendering verdict...[/]", spinner="dqpb"):
+                    verdict = self.client.call_with_retry([{"role": "user", "content": prompt}], tier=tier)
+                
+                if verdict is None:
+                    self.ui.log_action("CRITICAL ERROR", f"Chief Justice {chief.id} returned None")
+                    self.ui.console.print(f"\n[bold red]╔═══════════════════════════════════════════════════════════╗[/bold red]")
+                    self.ui.console.print(f"[bold red]║ VERDICT FAILED FOR {prop.id}                                    ║[/bold red]")
+                    self.ui.console.print(f"[bold red]╠═══════════════════════════════════════════════════════════╣[/bold red]")
+                    self.ui.console.print(f"[red]Check logs for detailed API error[/red]")
+                    self.ui.console.print(f"[bold red]╚═══════════════════════════════════════════════════════════╝[/bold red]\n")
+                    # Assign default score so we can continue
+                    prop.score = 5
+                    continue
+                
+                self.ui.log_action("Score Extraction", f"Parsing final score for {prop.id}...")
+                self.ui.display_verdict(chief.id, chief.role, verdict)
+                match = re.search(r'SCORE:\s*(\d+)', verdict.upper())
+                prop.score = int(match.group(1)) if match else 5
+            except Exception as e:
+                error_msg = f"{type(e).__name__}: {str(e)}"
+                self.ui.log_action("CRITICAL ERROR", f"Chief Justice {chief.id} crashed: {error_msg}")
+                self.ui.console.print(f"\n[bold red]╔═══════════════════════════════════════════════════════════╗[/bold red]")
+                self.ui.console.print(f"[bold red]║ EXCEPTION IN VERDICT                                          ║[/bold red]")
+                self.ui.console.print(f"[bold red]╠═══════════════════════════════════════════════════════════╣[/bold red]")
+                self.ui.console.print(f"[red]Error Type: {type(e).__name__}[/red]")
+                self.ui.console.print(f"[red]Error Details: {str(e)}[/red]")
+                self.ui.console.print(f"[bold red]╚═══════════════════════════════════════════════════════════╝[/bold red]\n")
+                # Assign default score so we can continue
+                prop.score = 5
         return proposals
 
     def run_synthesis_phase(self, proposals: List[Proposal]):
@@ -214,15 +359,52 @@ class SwarmBrain:
         tier = self.client.config.get("default_tiers", {}).get("synthesis", "EXTREME")
         sorted_props = sorted(proposals, key=lambda x: x.score, reverse=True)[:3]
         
-        with self.ui.console.status(f"[bold gold3]Synthesizer is merging champions (Tier: {tier})...[/]", spinner="moon"):
-            self.ui.log_action("Deep Integration", f"Merging Top 3 strategies ({[p.id for p in sorted_props]})")
-            combined = "\n\n".join([f"Agent {p.id} Strategy: {p.answer_v2}" for p in sorted_props])
-            prompt = f"Merge these 3 top-tier AI proposals into one unified, ultimate strategy document:\n{combined}"
-            synthesis = self.client.call_with_retry([{"role": "user", "content": prompt}], tier=tier)
+        if not sorted_props:
+            self.ui.log_action("CRITICAL ERROR", "No valid proposals to synthesize")
+            self.ui.console.print(f"\n[bold red]╔═══════════════════════════════════════════════════════════╗[/bold red]")
+            self.ui.console.print(f"[bold red]║ SYNTHESIS FAILED: NO VALID PROPOSALS                          ║[/bold red]")
+            self.ui.console.print(f"[bold red]╠═══════════════════════════════════════════════════════════╣[/bold red]")
+            self.ui.console.print(f"[red]All proposals failed in earlier phases[/red]")
+            self.ui.console.print(f"[bold red]╚═══════════════════════════════════════════════════════════╝[/bold red]\n")
+            return
         
-        if synthesis:
+        self.ui.log_action("Deep Integration", f"Merging Top 3 strategies ({[p.id for p in sorted_props]})")
+        combined = "\n\n".join([f"Agent {p.id} Strategy: {p.answer_v2}" for p in sorted_props if p.answer_v2])
+        
+        if not combined:
+            self.ui.log_action("CRITICAL ERROR", "No valid V2 proposals to synthesize")
+            return
+        
+        prompt = f"Merge these 3 top-tier AI proposals into one unified, ultimate strategy document:\n{combined}"
+        
+        try:
+            with self.ui.console.status(f"[bold gold3]Synthesizer is merging champions (Tier: {tier})...[/]", spinner="moon"):
+                synthesis = self.client.call_with_retry([{"role": "user", "content": prompt}], tier=tier)
+            
+            if synthesis is None:
+                self.ui.log_action("CRITICAL ERROR", "Synthesizer returned None after all retries")
+                self.ui.console.print(f"\n[bold red]╔═══════════════════════════════════════════════════════════╗[/bold red]")
+                self.ui.console.print(f"[bold red]║ SYNTHESIS FAILED                                              ║[/bold red]")
+                self.ui.console.print(f"[bold red]╠═══════════════════════════════════════════════════════════╣[/bold red]")
+                self.ui.console.print(f"[red]Check logs for detailed API error[/red]")
+                self.ui.console.print(f"[bold red]╚═══════════════════════════════════════════════════════════╝[/bold red]\n")
+                return
+            
             self.ui.log_action("Masterpiece Generated", "Saving final document to masterpiece.md")
-            self.ui.console.print(Panel(Markdown(synthesis), title="THE UNIFIED MASTERPIECE", border_style="gold3"))
+            self.ui.console.print(f"\n[bold gold3]╔═══════════════════════════════════════════════════════════╗[/bold gold3]")
+            self.ui.console.print(f"[bold gold3]║ THE UNIFIED MASTERPIECE                                     ║[/bold gold3]")
+            self.ui.console.print(f"[bold gold3]╠═══════════════════════════════════════════════════════════╣[/bold gold3]")
+            self.ui.console.print(f"[white]{synthesis}[/white]")
+            self.ui.console.print(f"[bold gold3]╚═══════════════════════════════════════════════════════════╝[/bold gold3]\n")
             with open("masterpiece.md", "w") as f:
                 f.write(synthesis)
+        except Exception as e:
+            error_msg = f"{type(e).__name__}: {str(e)}"
+            self.ui.log_action("CRITICAL ERROR", f"Synthesis crashed: {error_msg}")
+            self.ui.console.print(f"\n[bold red]╔═══════════════════════════════════════════════════════════╗[/bold red]")
+            self.ui.console.print(f"[bold red]║ EXCEPTION IN SYNTHESIS                                        ║[/bold red]")
+            self.ui.console.print(f"[bold red]╠═══════════════════════════════════════════════════════════╣[/bold red]")
+            self.ui.console.print(f"[red]Error Type: {type(e).__name__}[/red]")
+            self.ui.console.print(f"[red]Error Details: {str(e)}[/red]")
+            self.ui.console.print(f"[bold red]╚═══════════════════════════════════════════════════════════╝[/bold red]\n")
         return
