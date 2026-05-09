@@ -32,7 +32,7 @@ class UI:
         self.console.print(f"[bold {color}] {title}[/bold {color}]")
         self.console.print(f"[dim]{role}[/dim]")
         self.console.print(f"[bold {color}]═══════════════════════════════════════════════════════════[/bold {color}]")
-        self.console.print(f"[white]{content}[/white]")
+        self.console.print(content, style="white", markup=False)
         self.console.print(f"[bold {color}]═══════════════════════════════════════════════════════════[/bold {color}]\n")
 
     def display_critique(self, agent_id: str, role: str, content: str):
