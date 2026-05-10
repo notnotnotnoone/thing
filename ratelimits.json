@@ -1,6 +1,0 @@
-{
-    "requests": [],
-    "last_reset": 0,
-    "consecutive_failures": 0,
-    "backoff_seconds": 1
-}

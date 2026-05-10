@@ -1,10 +1,11 @@
 from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional
+from typing import Any
+
 
 @dataclass
 class AgentMemory:
     agent_id: str
-    past_actions: List[Dict[str, Any]] = field(default_factory=list)
+    past_actions: list[dict[str, Any]] = field(default_factory=list)
 
     def get_context_string(self) -> str:
         if not self.past_actions:
@@ -30,9 +31,9 @@ class Proposal:
     role: str
     answer_v1: str = ""
     answer_v2: str = ""
-    jury_feedback: List[str] = field(default_factory=list)
+    jury_feedback: list[str] = field(default_factory=list)
     jester_roast: str = ""
     score: int = 0
-    judgments: List[str] = field(default_factory=list)
+    judgments: list[str] = field(default_factory=list)
     duel_question: str = ""
     duel_answer: str = ""

@@ -1,3 +1,5 @@
-cerebras-cloud-sdk
 rich
+pydantic
 python-dotenv
+openai
+cerebras-cloud-sdk

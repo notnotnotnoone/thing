@@ -12,6 +12,15 @@ __pycache__/
 
 # Logs
 *.log
+agent_history.log
+
+# Application generated files
+router_health.json
+session_audit.csv
+masterpiece.md
+
+# Archive
+DEL_LATER/
 
 # Temporary files
 *.tmp

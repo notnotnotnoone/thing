@@ -1,0 +1,35 @@
+[project]
+name = "funaithings"
+version = "0.1.0"
+description = "AI swarm system for extreme-effort async reasoning"
+authors = []
+dependencies = [
+    "rich",
+    "pydantic",
+    "python-dotenv",
+    "openai",
+    "cerebras-cloud-sdk"
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "N",   # pep8-naming
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+]
+ignore = [
+    "E501",  # line too long (handled by formatter)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["src"]
+
+[tool.ty]
